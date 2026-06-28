@@ -2,6 +2,11 @@
   "name": "workflow_demo.json",
   "steps": [
     {
+      "type": "screenrecord",
+      "enabled": true,
+      "desc": "template_20260628_124719_2"
+    },
+    {
       "type": "click",
       "enabled": true,
       "template": "testcase_step1.png",
@@ -52,6 +57,12 @@
       "timeout": 10,
       "offsetX": 0,
       "offsetY": 0
+    },
+    {
+      "type": "wait",
+      "enabled": true,
+      "desc": "wait",
+      "seconds": 2
     },
     {
       "type": "swipe",
