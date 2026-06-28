@@ -1,0 +1,115 @@
+{
+  "name": "workflow_demo.json",
+  "steps": [
+    {
+      "type": "click",
+      "enabled": true,
+      "template": "testcase_step1.png",
+      "desc": "testcase_step1",
+      "threshold": 0.8,
+      "timeout": 10,
+      "offsetX": 0,
+      "offsetY": 0
+    },
+    {
+      "type": "click",
+      "enabled": true,
+      "template": "template_20260628_124719.png",
+      "desc": "template_20260628_124719",
+      "threshold": 0.8,
+      "timeout": 10,
+      "offsetX": 0,
+      "offsetY": 0
+    },
+    {
+      "type": "wait",
+      "enabled": true,
+      "desc": "wait",
+      "seconds": 1
+    },
+    {
+      "type": "click",
+      "enabled": true,
+      "template": "template_20260628_124747.png",
+      "desc": "template_20260628_124747",
+      "threshold": 0.8,
+      "timeout": 10,
+      "offsetX": 0,
+      "offsetY": 0
+    },
+    {
+      "type": "wait",
+      "enabled": true,
+      "desc": "wait",
+      "seconds": 2
+    },
+    {
+      "type": "click",
+      "enabled": true,
+      "template": "template_20260628_124802.png",
+      "desc": "template_20260628_124802",
+      "threshold": 0.8,
+      "timeout": 10,
+      "offsetX": 0,
+      "offsetY": 0
+    },
+    {
+      "type": "swipe",
+      "enabled": true,
+      "desc": "上滑",
+      "sx": 100,
+      "sy": 800,
+      "ex": 100,
+      "ey": 300,
+      "duration": 0.3
+    },
+    {
+      "type": "wait",
+      "enabled": true,
+      "desc": "wait",
+      "seconds": 1
+    },
+    {
+      "type": "swipe",
+      "enabled": true,
+      "desc": "上滑",
+      "sx": 100,
+      "sy": 800,
+      "ex": 100,
+      "ey": 300,
+      "duration": 0.3
+    },
+    {
+      "type": "wait",
+      "enabled": true,
+      "desc": "wait",
+      "seconds": 2
+    },
+    {
+      "type": "swipe",
+      "enabled": true,
+      "desc": "上滑",
+      "sx": 100,
+      "sy": 800,
+      "ex": 100,
+      "ey": 300,
+      "duration": 0.3
+    },
+    {
+      "type": "wait",
+      "enabled": true,
+      "desc": "wait",
+      "seconds": 1
+    },
+    {
+      "type": "swipe",
+      "enabled": true,
+      "desc": "上滑",
+      "sx": 100,
+      "sy": 800,
+      "ex": 100,
+      "ey": 300,
+      "duration": 0.3
+    }
+  ]
+}
