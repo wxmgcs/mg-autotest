@@ -1,0 +1,1 @@
+D:/aDisk/py3109-autotest/Scripts/pip install -r requirements.txt

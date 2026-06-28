@@ -1,0 +1,1 @@
+D:/aDisk/py3109-autotest/python.exe scripts/capture_template_web.py
