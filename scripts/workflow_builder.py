@@ -37,6 +37,8 @@ WORKFLOW_DIR = "workflows"
 HOST = "127.0.0.1"
 PORT = 18990
 
+_current_screenshot = None  # 最近一张设备截图 (numpy BGR), 用于创建模板
+
 
 HTML_PAGE = r"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -277,6 +279,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
   <h1>Workflow Builder</h1>
   <span class="device-info" id="device-info">-</span>
   <div class="actions">
+    <button onclick="showCreateTemplateModal()" style="background:#e9a545;border-color:#e9a545;color:#1a1a2e;font-weight:bold">📷 创建模板</button>
     <button onclick="saveWorkflow()">Save</button>
     <button onclick="showLoadDialog()">Load</button>
     <button class="btn-primary" onclick="runAllSteps()">▶ Run All</button>
@@ -331,6 +334,28 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <div class="empty">Loading...</div>
     </div>
     <div class="modal-close"><button onclick="closeLoadDialog()">Cancel</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="create-tpl-modal" style="z-index:1000;">
+  <div style="background:#1a1a2e;border:1px solid #0f3460;border-radius:10px;width:92vw;height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#16213e;border-bottom:1px solid #0f3460;flex-shrink:0;flex-wrap:wrap;">
+      <h3 style="color:#00d4aa;margin:0;font-size:14px;white-space:nowrap;">📷 创建模板</h3>
+      <button onclick="refreshCreateScreenshot()" style="background:#0f3460;color:#eee;border:1px solid #1a4a8a;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;">🔄 刷新</button>
+      <input type="text" id="create-tpl-name" placeholder="模板名称(自动生成)" style="background:#0d1b2a;color:#eee;border:1px solid #0f3460;padding:4px 8px;border-radius:4px;font-size:12px;outline:none;width:160px;" />
+      <label style="font-size:11px;color:#888;white-space:nowrap;"><input type="checkbox" id="create-tpl-auto-name" checked /> 自动</label>
+      <button onclick="saveCreatedTemplate()" id="create-tpl-save-btn" style="background:#00d4aa;color:#1a1a2e;font-weight:bold;border:1px solid #00d4aa;padding:4px 14px;border-radius:4px;cursor:pointer;font-size:11px;" disabled>💾 保存</button>
+      <button onclick="clearCreateSelection()" style="background:transparent;color:#e94560;border:1px solid #e94560;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;">✕ 清除</button>
+      <span id="create-tpl-coord" style="font-size:11px;color:#888;margin-left:auto;"></span>
+      <button onclick="closeCreateTemplateModal()" style="background:transparent;color:#888;border:none;cursor:pointer;font-size:18px;padding:0 6px;">&times;</button>
+    </div>
+    <div style="flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:10px;background:#0d1b2a;">
+      <canvas id="create-tpl-canvas" style="max-width:100%;max-height:100%;cursor:crosshair;border:1px solid #0f3460;border-radius:4px;"></canvas>
+    </div>
+    <div id="create-tpl-preview" style="display:none;padding:6px 14px;background:#16213e;border-top:1px solid #0f3460;flex-shrink:0;text-align:center;">
+      <img id="create-tpl-preview-img" style="max-width:180px;max-height:100px;border-radius:4px;border:1px solid #333;vertical-align:middle;" />
+      <span id="create-tpl-preview-info" style="font-size:11px;color:#888;margin-left:8px;"></span>
+    </div>
   </div>
 </div>
 
@@ -964,6 +989,260 @@ function setupResize() {
   document.addEventListener('mouseup', function() { isResizing = false; });
 }
 
+// ── Create Template (via screenshot) ──
+var createCanvas = null;
+var createCtx = null;
+var createImageDataUrl = null;
+var createIsDragging = false;
+var createSX = 0, createSY = 0, createEX = 0, createEY = 0;
+var createHasSelection = false;
+var createScaleRatio = 1;
+var _createEventsReady = false;
+
+function showCreateTemplateModal() {
+  document.getElementById('create-tpl-modal').classList.add('show');
+  createCanvas = document.getElementById('create-tpl-canvas');
+  createCtx = createCanvas.getContext('2d');
+  if (!_createEventsReady) {
+    setupCreateTemplateEvents();
+    _createEventsReady = true;
+  }
+  loadCreateScreenshot();
+}
+
+function closeCreateTemplateModal() {
+  document.getElementById('create-tpl-modal').classList.remove('show');
+}
+
+function setupCreateTemplateEvents() {
+  function getPos(e) {
+    var rect = createCanvas.getBoundingClientRect();
+    var x = (e.clientX - rect.left) * (createCanvas.width / rect.width);
+    var y = (e.clientY - rect.top) * (createCanvas.height / rect.height);
+    return { x: Math.max(0, Math.min(createCanvas.width, x)),
+             y: Math.max(0, Math.min(createCanvas.height, y)) };
+  }
+
+  createCanvas.addEventListener('mousedown', function(e) {
+    var pos = getPos(e);
+    createIsDragging = true;
+    createSX = pos.x; createSY = pos.y;
+    createEX = pos.x; createEY = pos.y;
+    createHasSelection = false;
+    document.getElementById('create-tpl-save-btn').disabled = true;
+  });
+
+  createCanvas.addEventListener('mousemove', function(e) {
+    var pos = getPos(e);
+    if (createIsDragging) {
+      createEX = pos.x; createEY = pos.y;
+      drawCreateCanvas();
+      drawCreateSelection();
+      updateCreateCoordInfo();
+    } else {
+      document.getElementById('create-tpl-coord').textContent =
+        '(' + Math.round(pos.x / createScaleRatio) + ', ' + Math.round(pos.y / createScaleRatio) + ')';
+    }
+  });
+
+  createCanvas.addEventListener('mouseup', function() {
+    if (!createIsDragging) return;
+    createIsDragging = false;
+    createHasSelection = true;
+    var w = Math.abs(createEX - createSX);
+    var h = Math.abs(createEY - createSY);
+    if (w < 3 || h < 3) { clearCreateSelection(); toast('选区太小', true); return; }
+    document.getElementById('create-tpl-save-btn').disabled = false;
+    updateCreateCoordInfo();
+    showCreatePreview();
+  });
+
+  createCanvas.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    var touch = e.touches[0];
+    var pos = getPos(touch);
+    createIsDragging = true;
+    createSX = pos.x; createSY = pos.y;
+    createEX = pos.x; createEY = pos.y;
+    createHasSelection = false;
+    document.getElementById('create-tpl-save-btn').disabled = true;
+  }, { passive: false });
+
+  createCanvas.addEventListener('touchmove', function(e) {
+    e.preventDefault();
+    if (!createIsDragging) return;
+    var touch = e.touches[0];
+    var pos = getPos(touch);
+    createEX = pos.x; createEY = pos.y;
+    drawCreateCanvas();
+    drawCreateSelection();
+    updateCreateCoordInfo();
+  }, { passive: false });
+
+  createCanvas.addEventListener('touchend', function(e) {
+    e.preventDefault();
+    if (!createIsDragging) return;
+    createIsDragging = false;
+    createHasSelection = true;
+    var w = Math.abs(createEX - createSX);
+    var h = Math.abs(createEY - createSY);
+    if (w < 3 || h < 3) { clearCreateSelection(); toast('选区太小', true); return; }
+    document.getElementById('create-tpl-save-btn').disabled = false;
+    updateCreateCoordInfo();
+    showCreatePreview();
+  }, { passive: false });
+}
+
+async function loadCreateScreenshot() {
+  try {
+    var resp = await fetch('/api/screenshot');
+    var data = await resp.json();
+    if (!data.success) { toast('截图加载失败: ' + data.error, true); return; }
+    createImageDataUrl = 'data:image/png;base64,' + data.image;
+    var img = new Image();
+    img.onload = function() {
+      var maxW = window.innerWidth * 0.85;
+      var maxH = window.innerHeight * 0.7;
+      var scale = Math.min(1, maxW / img.width, maxH / img.height);
+      createCanvas.width = Math.round(img.width * scale);
+      createCanvas.height = Math.round(img.height * scale);
+      createScaleRatio = scale;
+      createCtx.drawImage(img, 0, 0, createCanvas.width, createCanvas.height);
+      clearCreateSelection();
+    };
+    img.src = createImageDataUrl;
+  } catch(e) { toast('截图加载失败: ' + e.message, true); }
+}
+
+async function refreshCreateScreenshot() {
+  try {
+    await fetch('/api/refresh_screenshot');
+    await loadCreateScreenshot();
+    toast('截图已刷新');
+  } catch(e) { toast('刷新失败: ' + e.message, true); }
+}
+
+function drawCreateCanvas() {
+  if (!createImageDataUrl || !createCtx) return;
+  var img = new Image();
+  img.src = createImageDataUrl;
+  createCtx.drawImage(img, 0, 0, createCanvas.width, createCanvas.height);
+}
+
+function drawCreateSelection() {
+  var x = Math.min(createSX, createEX);
+  var y = Math.min(createSY, createEY);
+  var w = Math.abs(createEX - createSX);
+  var h = Math.abs(createEY - createSY);
+
+  createCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+  createCtx.fillRect(0, 0, createCanvas.width, createCanvas.height);
+
+  createCtx.clearRect(x, y, w, h);
+
+  if (createImageDataUrl) {
+    var img = new Image();
+    img.src = createImageDataUrl;
+    createCtx.drawImage(img, x, y, w, h, x, y, w, h);
+  }
+
+  createCtx.strokeStyle = '#00ff88';
+  createCtx.lineWidth = 2;
+  createCtx.setLineDash([5, 4]);
+  createCtx.strokeRect(x, y, w, h);
+  createCtx.setLineDash([]);
+
+  var realW = Math.round(w / createScaleRatio);
+  var realH = Math.round(h / createScaleRatio);
+  createCtx.fillStyle = '#00ff88';
+  createCtx.font = '13px sans-serif';
+  createCtx.fillText(realW + ' x ' + realH, x + 6, y - 8);
+}
+
+function updateCreateCoordInfo() {
+  var x1 = Math.round(Math.min(createSX, createEX) / createScaleRatio);
+  var y1 = Math.round(Math.min(createSY, createEY) / createScaleRatio);
+  var x2 = Math.round(Math.max(createSX, createEX) / createScaleRatio);
+  var y2 = Math.round(Math.max(createSY, createEY) / createScaleRatio);
+  var w = x2 - x1, h = y2 - y1;
+  document.getElementById('create-tpl-coord').textContent =
+    '(' + x1 + ',' + y1 + ') -> (' + x2 + ',' + y2 + ') [' + w + 'x' + h + ']';
+
+  if (document.getElementById('create-tpl-auto-name').checked) {
+    var now = new Date();
+    var ts = now.getFullYear() +
+      String(now.getMonth()+1).padStart(2,'0') +
+      String(now.getDate()).padStart(2,'0') + '_' +
+      String(now.getHours()).padStart(2,'0') +
+      String(now.getMinutes()).padStart(2,'0') +
+      String(now.getSeconds()).padStart(2,'0');
+    var ni = document.getElementById('create-tpl-name');
+    if (!ni.value || ni.dataset.auto === '1') {
+      ni.value = 'template_' + ts;
+      ni.dataset.auto = '1';
+    }
+  }
+}
+
+function clearCreateSelection() {
+  createHasSelection = false;
+  createIsDragging = false;
+  document.getElementById('create-tpl-save-btn').disabled = true;
+  document.getElementById('create-tpl-coord').textContent = '';
+  document.getElementById('create-tpl-preview').style.display = 'none';
+  drawCreateCanvas();
+}
+
+function showCreatePreview() {
+  var x = Math.min(createSX, createEX);
+  var y = Math.min(createSY, createEY);
+  var w = Math.abs(createEX - createSX);
+  var h = Math.abs(createEY - createSY);
+  if (w < 1 || h < 1) return;
+
+  var imgData = createCtx.getImageData(x, y, w, h);
+  var tc = document.createElement('canvas');
+  tc.width = w; tc.height = h;
+  var tctx = tc.getContext('2d');
+  tctx.putImageData(imgData, 0, 0);
+
+  document.getElementById('create-tpl-preview-img').src = tc.toDataURL();
+  document.getElementById('create-tpl-preview-info').textContent =
+    Math.round(w/createScaleRatio) + ' x ' + Math.round(h/createScaleRatio) + ' px';
+  document.getElementById('create-tpl-preview').style.display = '';
+}
+
+async function saveCreatedTemplate() {
+  if (!createHasSelection) return;
+  var name = document.getElementById('create-tpl-name').value.trim();
+  if (!name) { toast('请输入模板名称', true); return; }
+
+  var x1 = Math.round(Math.min(createSX, createEX) / createScaleRatio);
+  var y1 = Math.round(Math.min(createSY, createEY) / createScaleRatio);
+  var x2 = Math.round(Math.max(createSX, createEX) / createScaleRatio);
+  var y2 = Math.round(Math.max(createSY, createEY) / createScaleRatio);
+
+  var btn = document.getElementById('create-tpl-save-btn');
+  btn.disabled = true; btn.textContent = '⏳ 保存中...';
+  try {
+    var resp = await fetch('/api/save_template', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, x1: x1, y1: y1, x2: x2, y2: y2 }),
+    });
+    var data = await resp.json();
+    if (data.success) {
+      toast('✅ 模板已保存: ' + name);
+      document.getElementById('create-tpl-name').dataset.auto = '1';
+      closeCreateTemplateModal();
+      loadTemplates();
+    } else {
+      toast('❌ 保存失败: ' + data.error, true);
+    }
+  } catch(e) { toast('保存失败: ' + e.message, true); }
+  btn.textContent = '💾 保存'; btn.disabled = false;
+}
+
 // ── Toast ──
 function toast(msg, isError) {
   var el = document.getElementById('toast');
@@ -1017,6 +1296,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         elif path == "/api/list_workflows":
             self._handle_list_workflows()
 
+        elif path == "/api/screenshot":
+            self._handle_screenshot()
+
         elif path.startswith("/api/template_img/"):
             name = path[len("/api/template_img/"):]
             self._handle_template_image(name)
@@ -1042,6 +1324,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._handle_load_workflow(body)
         elif path == "/api/export_script":
             self._handle_export_script(body)
+        elif path == "/api/refresh_screenshot":
+            self._handle_refresh_screenshot(body)
+        elif path == "/api/save_template":
+            self._handle_save_template(body)
         else:
             self._send_json({"success": False, "error": "Not found"}, 404)
 
@@ -1360,6 +1646,83 @@ class RequestHandler(BaseHTTPRequestHandler):
             "filename": filename,
         })
 
+    # ── 截图 ──
+
+    def _handle_screenshot(self):
+        global _current_screenshot
+        if _current_screenshot is None:
+            self._send_json({"success": False, "error": "截图未就绪"})
+            return
+        try:
+            _, buf = cv2.imencode(".png", _current_screenshot)
+            img_b64 = base64.b64encode(buf).decode("utf-8")
+            h, w = _current_screenshot.shape[:2]
+            self._send_json({
+                "success": True,
+                "image": img_b64,
+                "width": w,
+                "height": h,
+            })
+        except Exception as e:
+            logger.error(f"截图 API 错误: {e}")
+            self._send_json({"success": False, "error": str(e)})
+
+    # ── 重新截图 ──
+
+    def _handle_refresh_screenshot(self, body):
+        global _current_screenshot
+        d = RequestHandler.device
+        if d is None:
+            self._send_json({"success": False, "error": "设备未连接"})
+            return
+        try:
+            _current_screenshot = d.screenshot(format="opencv")
+            if _current_screenshot is None:
+                raise RuntimeError("截图返回空")
+            h, w = _current_screenshot.shape[:2]
+            logger.info(f"截图已刷新: {w}x{h}")
+            self._send_json({"success": True, "width": w, "height": h})
+        except Exception as e:
+            logger.error(f"刷新截图失败: {e}")
+            self._send_json({"success": False, "error": str(e)})
+
+    # ── 保存模板 ──
+
+    def _handle_save_template(self, body):
+        global _current_screenshot
+        name = body.get("name", "").strip()
+        x1, y1 = int(body["x1"]), int(body["y1"])
+        x2, y2 = int(body["x2"]), int(body["y2"])
+        if not name:
+            self._send_json({"success": False, "error": "模板名称为空"})
+            return
+        if _current_screenshot is None:
+            self._send_json({"success": False, "error": "截图数据丢失，请刷新"})
+            return
+        h, w = _current_screenshot.shape[:2]
+        x1 = max(0, min(x1, w - 2))
+        y1 = max(0, min(y1, h - 2))
+        x2 = max(x1 + 1, min(x2, w))
+        y2 = max(y1 + 1, min(y2, h))
+        if (x2 - x1) < 3 or (y2 - y1) < 3:
+            self._send_json({"success": False, "error": "选区太小 (至少 3x3)"})
+            return
+        cropped = _current_screenshot[y1:y2, x1:x2].copy()
+        os.makedirs(TEMPLATE_DIR, exist_ok=True)
+        if not name.endswith(".png"):
+            name += ".png"
+        filepath = os.path.join(TEMPLATE_DIR, name)
+        if os.path.exists(filepath):
+            self._send_json({"success": False, "error": f"文件已存在: {name}"})
+            return
+        cv2.imwrite(filepath, cropped)
+        logger.info(f"模板已保存: {filepath} ({x2-x1}x{y2-y1})")
+        self._send_json({
+            "success": True,
+            "path": os.path.abspath(filepath),
+            "size": f"{x2-x1}x{y2-y1}",
+        })
+
 
 # ─────────────── 启动 ───────────────
 
@@ -1382,6 +1745,16 @@ def main():
         RequestHandler.device = d
         RequestHandler.device_name = d.info.get("productName", "Android")
         print(f"   [OK] {RequestHandler.device_name} ({w}x{h})")
+
+        # 截图用于创建模板
+        global _current_screenshot
+        try:
+            _current_screenshot = d.screenshot(format="opencv")
+            if _current_screenshot is not None:
+                h, w = _current_screenshot.shape[:2]
+                print(f"   [Screenshot] {w}x{h}")
+        except Exception as e:
+            print(f"   [Warn] 初始截图失败: {e}")
     except Exception as e:
         print(f"   [Warn] Device connection failed: {e}")
         print("   Workflow editing still available, click/run needs device.")
