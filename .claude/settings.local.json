@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(python *)",
+      "Bash(find D:/aDisk/github/mg-autotest -maxdepth 3 -not -path '*/\\\\.*' -not -path '*/node_modules/*' -not -path '*/__pycache__/*' -not -path '*/.git/*')",
+      "Bash(cp -r core/* src/mg_autotest/core/)",
+      "Bash(cp -r scripts/* src/mg_autotest/scripts/)",
+      "Bash(rm -rf core scripts main.py config.py)",
+      "Bash(ls -la *.py)"
+    ]
+  }
+}

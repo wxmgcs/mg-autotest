@@ -9,8 +9,8 @@ import uiautomator2 as u2
 import subprocess
 import re
 
-from core.logger import get_logger
-from config import (
+from mg_autotest.core.logger import get_logger
+from mg_autotest.config import (
     DEVICE_CONNECT_METHOD,
     DEVICE_ADDRESS,
     DEVICE_SERIAL,

@@ -10,8 +10,8 @@ from typing import Optional
 
 import uiautomator2 as u2
 
-from core.logger import get_logger
-from config import (
+from mg_autotest.core.logger import get_logger
+from mg_autotest.config import (
     DEFAULT_TIMEOUT,
     WAIT_ELEMENT_INTERVAL,
 )

@@ -22,13 +22,11 @@ from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import cv2
 import numpy as np
-from core.device import get_device
-from core.logger import get_logger
-from scripts.workflow_runner import execute_single_step
+from mg_autotest.core.device import get_device
+from mg_autotest.core.logger import get_logger
+from mg_autotest.scripts.workflow_runner import execute_single_step
 
 logger = get_logger(__name__)
 
@@ -1544,14 +1542,10 @@ class RequestHandler(BaseHTTPRequestHandler):
         lines.append('Run: python workflow.py')
         lines.append('"""')
         lines.append('')
-        lines.append('import sys')
-        lines.append('from pathlib import Path')
-        lines.append('sys.path.insert(0, str(Path(__file__).resolve().parent))')
-        lines.append('')
-        lines.append('from core.logger import get_logger')
-        lines.append('from core.device import get_device')
-        lines.append('from core.image_matcher import find_and_click, find_image')
-        lines.append('from core.watchers import setup_watchers')
+        lines.append('from mg_autotest.core.logger import get_logger')
+        lines.append('from mg_autotest.core.device import get_device')
+        lines.append('from mg_autotest.core.image_matcher import find_and_click, find_image')
+        lines.append('from mg_autotest.core.watchers import setup_watchers')
         lines.append('import time')
         lines.append('')
         lines.append('logger = get_logger(__name__)')

@@ -5,24 +5,19 @@ OpenCV + uiautomator2 图像识别自动化测试
 """
 
 import sys
-from pathlib import Path
-
-# 确保项目根目录在 sys.path 中
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
 import time
 import argparse
 
-from core.logger import get_logger, setup_logger
-from core.device import get_device, wake_screen, get_device_resolution
-from core.image_matcher import (
+from mg_autotest.core.logger import get_logger, setup_logger
+from mg_autotest.core.device import get_device, wake_screen, get_device_resolution
+from mg_autotest.core.image_matcher import (
     find_and_click,
     wait_for_image,
     click_if_exists,
     save_screenshot,
 )
-from core.watchers import setup_watchers
-from core.helpers import wait_for_text
+from mg_autotest.core.watchers import setup_watchers
+from mg_autotest.core.helpers import wait_for_text
 
 logger = get_logger(__name__)
 

@@ -11,7 +11,6 @@ Web 版模板截图工具
   4. 点击保存 → 裁剪并写入 templates/
 """
 
-import sys
 import os
 import json
 import io
@@ -19,18 +18,14 @@ import base64
 import webbrowser
 import threading
 import time
-from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-
-# 确保项目根目录在 sys.path 中
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cv2
 import numpy as np
 
-from core.device import get_device
-from core.logger import get_logger
+from mg_autotest.core.device import get_device
+from mg_autotest.core.logger import get_logger
 
 logger = get_logger(__name__)
 

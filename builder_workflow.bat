@@ -1,1 +1,1 @@
-D:/aDisk/py3109-autotest/python.exe scripts/workflow_builder.py
+D:/aDisk/py3109-autotest/python.exe -m mg_autotest.scripts.workflow_builder

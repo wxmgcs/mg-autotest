@@ -1,1 +1,1 @@
-D:/aDisk/py3109-autotest/python.exe scripts/capture_template_web.py
+D:/aDisk/py3109-autotest/python.exe -m mg_autotest.scripts.capture_template_web

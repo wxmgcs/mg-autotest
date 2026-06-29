@@ -8,7 +8,7 @@
 import uiautomator2 as u2
 from typing import Dict, List, Optional
 
-from core.logger import get_logger
+from mg_autotest.core.logger import get_logger
 
 logger = get_logger(__name__)
 

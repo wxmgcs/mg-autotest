@@ -8,7 +8,7 @@
 import logging
 import sys
 
-from config import LOG_LEVEL, LOG_FORMAT, LOG_FILE
+from mg_autotest.config import LOG_LEVEL, LOG_FORMAT, LOG_FILE
 
 # 保存已创建的 logger，避免重复添加 handler
 _loggers = {}

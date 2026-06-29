@@ -25,15 +25,12 @@ try:
 except ImportError:
     Image = None
 
-# 确保项目根目录在 sys.path 中
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import cv2
-from core.logger import get_logger, setup_logger
-from core.device import get_device, wake_screen, press_home
-from core.image_matcher import find_image, find_and_click, save_screenshot
-from core.watchers import setup_watchers
-from config import STATUS_BAR_HEIGHT, RECORD_INTERVAL, RECORD_RESIZE_RATIO, RECORD_GIF_COLORS
+from mg_autotest.core.logger import get_logger, setup_logger
+from mg_autotest.core.device import get_device, wake_screen, press_home
+from mg_autotest.core.image_matcher import find_image, find_and_click, save_screenshot
+from mg_autotest.core.watchers import setup_watchers
+from mg_autotest.config import STATUS_BAR_HEIGHT, RECORD_INTERVAL, RECORD_RESIZE_RATIO, RECORD_GIF_COLORS
 
 logger = get_logger(__name__)
 
@@ -106,7 +103,7 @@ def execute_single_step(d, step: dict) -> dict:
     step_type = step.get("type", "click")
     try:
         if step_type == "click":
-            from core.image_matcher import find_and_click
+            from mg_autotest.core.image_matcher import find_and_click
             template = step.get("template", "")
             threshold = float(step.get("threshold", 0.8))
             timeout = float(step.get("timeout", 10))
@@ -124,7 +121,7 @@ def execute_single_step(d, step: dict) -> dict:
             return {"success": True, "result": f"sent text: {text}"}
 
         elif step_type == "long_click":
-            from core.image_matcher import find_image
+            from mg_autotest.core.image_matcher import find_image
             template = step.get("template", "")
             threshold = float(step.get("threshold", 0.8))
             timeout = float(step.get("timeout", 10))
