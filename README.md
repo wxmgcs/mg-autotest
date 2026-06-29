@@ -4,6 +4,29 @@
 
 ---
 
+## 快速安装
+
+通过 pip 安装（Python 3.9+）：
+
+```bash
+pip install mg-autotest
+```
+
+安装后可直接使用命令行工具：
+
+```bash
+# 浏览器截图框选保存为模板
+mg-capture-template
+
+# 可视化拖拽编排工作流
+mg-workflow-builder
+
+# 命令行执行工作流
+mg-workflow-runner
+```
+
+---
+
 ## 演示案例
 
 | 工具 | 效果 |
