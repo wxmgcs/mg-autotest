@@ -7,7 +7,8 @@
       "Bash(cp -r core/* src/mg_autotest/core/)",
       "Bash(cp -r scripts/* src/mg_autotest/scripts/)",
       "Bash(rm -rf core scripts main.py config.py)",
-      "Bash(ls -la *.py)"
+      "Bash(ls -la *.py)",
+      "Bash(PYTHONPATH=src D:/aDisk/py3109-autotest/python.exe *)"
     ]
   }
 }

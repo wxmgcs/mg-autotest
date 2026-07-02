@@ -35,6 +35,8 @@ from mg_autotest.config import STATUS_BAR_HEIGHT, RECORD_INTERVAL, RECORD_RESIZE
 logger = get_logger(__name__)
 
 WORKFLOW_DIR = "workflows"
+TEMPLATE_DIR = "templates"
+SCREENRECORDS_DIR = "screenrecords"
 CONTINUE_ON_ERROR = False  # 默认遇错停止，--continue 则跳过继续
 
 
@@ -109,7 +111,7 @@ def execute_single_step(d, step: dict) -> dict:
             timeout = float(step.get("timeout", 10))
             ox = int(step.get("offsetX", 0))
             oy = int(step.get("offsetY", 0))
-            tpl_path = os.path.join("templates", template)
+            tpl_path = os.path.join(TEMPLATE_DIR, template)
             if not os.path.isfile(tpl_path):
                 return {"success": False, "error": f"Template not found: {template}"}
             ok = find_and_click(d, tpl_path, threshold=threshold, timeout=timeout, offset_x=ox, offset_y=oy)
@@ -128,7 +130,7 @@ def execute_single_step(d, step: dict) -> dict:
             ox = int(step.get("offsetX", 0))
             oy = int(step.get("offsetY", 0))
             duration = float(step.get("duration", 1.0))
-            tpl_path = os.path.join("templates", template)
+            tpl_path = os.path.join(TEMPLATE_DIR, template)
             if not os.path.isfile(tpl_path):
                 return {"success": False, "error": f"Template not found: {template}"}
             result = find_image(d, tpl_path, threshold=threshold, timeout=timeout)
@@ -198,7 +200,7 @@ def execute_step(d, step: dict, step_num: int, total: int) -> bool:
             timeout = float(step.get("timeout", 10))
             offset_x = int(step.get("offsetX", 0))
             offset_y = int(step.get("offsetY", 0))
-            tpl_path = os.path.join("templates", template)
+            tpl_path = os.path.join(TEMPLATE_DIR, template)
 
             if not os.path.isfile(tpl_path):
                 logger.error(f"  {prefix} ✗ 模板文件不存在: {tpl_path}")
@@ -229,7 +231,7 @@ def execute_step(d, step: dict, step_num: int, total: int) -> bool:
             offset_x = int(step.get("offsetX", 0))
             offset_y = int(step.get("offsetY", 0))
             duration = float(step.get("duration", 1.0))
-            tpl_path = os.path.join("templates", template)
+            tpl_path = os.path.join(TEMPLATE_DIR, template)
 
             if not os.path.isfile(tpl_path):
                 logger.error(f"  {prefix} ✗ 模板文件不存在: {tpl_path}")
@@ -318,7 +320,7 @@ def run_workflow(filepath: str, continue_on_error: bool = False, record: bool = 
     # 3b. 环境初始化（如需）
     if initenv:
         logger.info("检查环境就绪...")
-        tpl_path = os.path.join("templates", INITENV_TEMPLATE)
+        tpl_path = os.path.join(TEMPLATE_DIR, INITENV_TEMPLATE)
         if not os.path.isfile(tpl_path):
             logger.error(f"初始化模板不存在: {tpl_path}")
             return False
@@ -384,11 +386,11 @@ def run_workflow(filepath: str, continue_on_error: bool = False, record: bool = 
             if step.get("type") == "screenrecord":
                 desc = step.get("desc", "screenrecord")
                 if record and not recording_started:
-                    os.makedirs("screenrecords", exist_ok=True)
+                    os.makedirs(SCREENRECORDS_DIR, exist_ok=True)
                     try:
                         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                        frames_dir = f"screenrecords/{workflow_name}_{timestamp}_frames"
-                        video_path = f"screenrecords/{workflow_name}_{timestamp}.gif"
+                        frames_dir = os.path.join(SCREENRECORDS_DIR, f"{workflow_name}_{timestamp}_frames")
+                        video_path = os.path.join(SCREENRECORDS_DIR, f"{workflow_name}_{timestamp}.gif")
                         os.makedirs(frames_dir, exist_ok=True)
                         record_stop_event = threading.Event()
 
@@ -495,6 +497,12 @@ def parse_args():
                         help="录制屏幕操作，保存到 screenrecords/ 目录")
     parser.add_argument("--initenv", action="store_true",
                         help="执行前等待 wx_filetranshelper 出现，确保环境就绪")
+    parser.add_argument("--templates-dir", default="templates",
+                        help="模板图片目录 (默认: templates)")
+    parser.add_argument("--workflows-dir", default="workflows",
+                        help="工作流文件目录 (默认: workflows)")
+    parser.add_argument("--screenrecords-dir", default="screenrecords",
+                        help="录屏文件目录 (默认: screenrecords)")
     return parser.parse_args()
 
 
@@ -502,9 +510,18 @@ def main():
     setup_logger()
     args = parse_args()
 
+    # 应用自定义目录（转绝对路径）
+    global WORKFLOW_DIR, TEMPLATE_DIR, SCREENRECORDS_DIR
+    WORKFLOW_DIR = os.path.abspath(args.workflows_dir)
+    TEMPLATE_DIR = os.path.abspath(args.templates_dir)
+    SCREENRECORDS_DIR = os.path.abspath(args.screenrecords_dir)
+
     print("=" * 50)
     print("  Workflow Runner")
     print("=" * 50)
+    print(f"\n  模板目录:     {TEMPLATE_DIR}")
+    print(f"  工作流目录:   {WORKFLOW_DIR}")
+    print(f"  录屏目录:     {SCREENRECORDS_DIR}")
 
     # --list 模式
     if args.list:

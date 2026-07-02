@@ -88,6 +88,15 @@ HTML_PAGE = r"""<!DOCTYPE html>
   #toolbar .btn-danger:hover { background: #ff6b81; }
   #toolbar label { font-size: 13px; color: #aaa; }
 
+  .back-link {
+    position: fixed; top: 12px; right: 16px;
+    color: #00d4aa; text-decoration: none;
+    font-size: 13px; padding: 6px 12px;
+    background: #16213e; border: 1px solid #0f3460;
+    border-radius: 5px; z-index: 10;
+  }
+  .back-link:hover { background: #0f3460; border-color: #00d4aa; }
+
   #status-bar {
     display: flex;
     gap: 16px;
@@ -202,6 +211,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
 <body>
 
 <h1>📷 模板截图工具</h1>
+<a class="back-link" href="/">← 返回工作流编排</a>
 
 <div id="toolbar">
   <button id="btn-refresh" onclick="refreshScreenshot()">🔄 刷新截图</button>
@@ -265,7 +275,7 @@ async function refreshScreenshot() {
     document.getElementById('device-info').textContent = '正在截图...';
 
     // 1. 通知后端重新截图
-    const refreshResp = await fetch('/api/refresh');
+    const refreshResp = await fetch('/api/refresh_screenshot', { method: 'POST' });
     const refreshData = await refreshResp.json();
     if (!refreshData.success) { toast('刷新失败: ' + refreshData.error, true); return; }
 
@@ -537,7 +547,7 @@ async function saveTemplate() {
   document.getElementById('btn-save').textContent = '⏳ 保存中...';
 
   try {
-    const resp = await fetch('/api/save', {
+    const resp = await fetch('/api/save_template', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, x1, y1, x2, y2 }),

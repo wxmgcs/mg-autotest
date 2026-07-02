@@ -1,13 +1,14 @@
 """
-Web 版工作流编排工具
+Web 版工作流编排工具（集成模板截图功能）
 
 在浏览器中拖拽 templates/ 中的模板图片，编排自动化操作流程。
 支持保存/加载工作流，导出可执行的 Python 脚本。
+支持跳转至独立模板截图页面。
 
 流程:
   1. 连接设备
   2. 浏览器打开编排界面
-  3. 从左侧模板列表拖拽图片到工作流区域
+  3. 从左侧模板列表拖拽图片到工作流区域，或点击「创建模板」从截图框选新模板
   4. 配置每个步骤的阈值、超时、描述等参数
   5. 拖拽排序、增删步骤
   6. 保存工作流 / 导出 Python 脚本
@@ -17,6 +18,7 @@ import sys
 import os
 import json
 import base64
+import argparse
 import webbrowser
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -30,8 +32,6 @@ from mg_autotest.scripts.workflow_runner import execute_single_step
 
 logger = get_logger(__name__)
 
-TEMPLATE_DIR = "templates"
-WORKFLOW_DIR = "workflows"
 HOST = "127.0.0.1"
 PORT = 18990
 
@@ -277,7 +277,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
   <h1>Workflow Builder</h1>
   <span class="device-info" id="device-info">-</span>
   <div class="actions">
-    <button onclick="showCreateTemplateModal()" style="background:#e9a545;border-color:#e9a545;color:#1a1a2e;font-weight:bold">📷 创建模板</button>
+    <a href="/capture-template" target="_blank" style="background:#e9a545;border-color:#e9a545;color:#1a1a2e;font-weight:bold;text-decoration:none;padding:6px 14px;border-radius:5px;font-size:13px">📷 创建模板</a>
     <button onclick="saveWorkflow()">Save</button>
     <button onclick="showLoadDialog()">Load</button>
     <button class="btn-primary" onclick="runAllSteps()">▶ Run All</button>
@@ -347,8 +347,8 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <span id="create-tpl-coord" style="font-size:11px;color:#888;margin-left:auto;"></span>
       <button onclick="closeCreateTemplateModal()" style="background:transparent;color:#888;border:none;cursor:pointer;font-size:18px;padding:0 6px;">&times;</button>
     </div>
-    <div style="flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:10px;background:#0d1b2a;">
-      <canvas id="create-tpl-canvas" style="max-width:100%;max-height:100%;cursor:crosshair;border:1px solid #0f3460;border-radius:4px;"></canvas>
+    <div style="flex:1;overflow:auto;display:flex;flex-direction:column;padding:10px;background:#0d1b2a;">
+      <canvas id="create-tpl-canvas" style="max-width:100%;cursor:crosshair;border:1px solid #0f3460;border-radius:4px;"></canvas>
     </div>
     <div id="create-tpl-preview" style="display:none;padding:6px 14px;background:#16213e;border-top:1px solid #0f3460;flex-shrink:0;text-align:center;">
       <img id="create-tpl-preview-img" style="max-width:180px;max-height:100px;border-radius:4px;border:1px solid #333;vertical-align:middle;" />
@@ -1049,7 +1049,7 @@ function setupCreateTemplateEvents() {
     createHasSelection = true;
     var w = Math.abs(createEX - createSX);
     var h = Math.abs(createEY - createSY);
-    if (w < 3 || h < 3) { clearCreateSelection(); toast('选区太小', true); return; }
+    if (w < 1 || h < 1) { clearCreateSelection(); toast('选区太小', true); return; }
     document.getElementById('create-tpl-save-btn').disabled = false;
     updateCreateCoordInfo();
     showCreatePreview();
@@ -1084,11 +1084,24 @@ function setupCreateTemplateEvents() {
     createHasSelection = true;
     var w = Math.abs(createEX - createSX);
     var h = Math.abs(createEY - createSY);
-    if (w < 3 || h < 3) { clearCreateSelection(); toast('选区太小', true); return; }
+    if (w < 1 || h < 1) { clearCreateSelection(); toast('选区太小', true); return; }
     document.getElementById('create-tpl-save-btn').disabled = false;
     updateCreateCoordInfo();
     showCreatePreview();
   }, { passive: false });
+
+  // ── 键盘快捷键（集成自 capture_template_web） ──
+  document.addEventListener('keydown', function(e) {
+    var modal = document.getElementById('create-tpl-modal');
+    if (!modal.classList.contains('show')) return;
+    var tag = e.target.tagName.toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault(); saveCreatedTemplate();
+    }
+    if (e.key === 'Escape') { clearCreateSelection(); }
+    if (e.key === 'r' || e.key === 'R') { refreshCreateScreenshot(); }
+  });
 }
 
 async function loadCreateScreenshot() {
@@ -1099,9 +1112,9 @@ async function loadCreateScreenshot() {
     createImageDataUrl = 'data:image/png;base64,' + data.image;
     var img = new Image();
     img.onload = function() {
-      var maxW = window.innerWidth * 0.85;
-      var maxH = window.innerHeight * 0.7;
-      var scale = Math.min(1, maxW / img.width, maxH / img.height);
+      var maxW = window.innerWidth - 64;
+      // 以宽度为准缩放，不限制高度，容器可滚动查看完整截图
+      var scale = Math.min(1, maxW / img.width);
       createCanvas.width = Math.round(img.width * scale);
       createCanvas.height = Math.round(img.height * scale);
       createScaleRatio = scale;
@@ -1261,6 +1274,9 @@ class RequestHandler(BaseHTTPRequestHandler):
     # 设备引用由 main() 启动时设置，所有请求共享
     device = None
     device_name = None
+    template_dir = "templates"
+    workflow_dir = "workflows"
+    screenrecords_dir = "screenrecords"
 
     def log_message(self, format, *args):
         pass
@@ -1301,6 +1317,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             name = path[len("/api/template_img/"):]
             self._handle_template_image(name)
 
+        elif path == "/capture-template":
+            # 从 capture_template_web 模块导入独立模板截图页面
+            from mg_autotest.scripts.capture_template_web import HTML_PAGE as CT_HTML
+            self._send_html(CT_HTML)
+
         else:
             self._send_json({"success": False, "error": "Not found"}, 404)
 
@@ -1326,6 +1347,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._handle_refresh_screenshot(body)
         elif path == "/api/save_template":
             self._handle_save_template(body)
+        elif path == "/api/test_match":
+            self._handle_test_match(body)
+        elif path == "/api/click":
+            self._handle_click(body)
         else:
             self._send_json({"success": False, "error": "Not found"}, 404)
 
@@ -1333,18 +1358,20 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _handle_templates(self):
         try:
-            os.makedirs(TEMPLATE_DIR, exist_ok=True)
-            files = sorted(f for f in os.listdir(TEMPLATE_DIR) if f.lower().endswith(".png"))
+            td = self.__class__.template_dir
+            os.makedirs(td, exist_ok=True)
+            files = sorted(f for f in os.listdir(td) if f.lower().endswith(".png"))
             self._send_json({"success": True, "templates": files})
         except Exception as e:
             self._send_json({"success": False, "error": str(e)})
 
     def _handle_template_image(self, name):
         try:
-            path = os.path.join(TEMPLATE_DIR, name)
+            td = self.__class__.template_dir
+            path = os.path.join(td, name)
             if not os.path.isfile(path):
                 # 防范路径穿越
-                path = os.path.normpath(os.path.join(TEMPLATE_DIR, os.path.basename(name)))
+                path = os.path.normpath(os.path.join(td, os.path.basename(name)))
             if not os.path.isfile(path):
                 self._send_json({"success": False, "error": "Not found"}, 404)
                 return
@@ -1372,8 +1399,9 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _handle_list_workflows(self):
         try:
-            os.makedirs(WORKFLOW_DIR, exist_ok=True)
-            files = sorted(f for f in os.listdir(WORKFLOW_DIR) if f.lower().endswith(".json"))
+            wd = self.__class__.workflow_dir
+            os.makedirs(wd, exist_ok=True)
+            files = sorted(f for f in os.listdir(wd) if f.lower().endswith(".json"))
             self._send_json({"success": True, "workflows": files})
         except Exception as e:
             self._send_json({"success": False, "error": str(e)})
@@ -1385,7 +1413,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
         # 防范路径穿越
         safe_name = os.path.basename(filename)
-        filepath = os.path.join(WORKFLOW_DIR, safe_name)
+        filepath = os.path.join(self.__class__.workflow_dir, safe_name)
         if not os.path.isfile(filepath):
             self._send_json({"success": False, "error": f"File not found: {safe_name}"})
             return
@@ -1451,7 +1479,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         import time as _time
         import cv2
 
-        tpl_path = os.path.join("templates", INITENV_TEMPLATE)
+        tpl_path = os.path.join(self.__class__.template_dir, INITENV_TEMPLATE)
         if not os.path.isfile(tpl_path):
             self._send_json({"success": False, "error": f"Init template not found: {tpl_path}"})
             return
@@ -1522,8 +1550,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not name.endswith(".json"):
             name += ".json"
 
-        os.makedirs(WORKFLOW_DIR, exist_ok=True)
-        filepath = os.path.join(WORKFLOW_DIR, name)
+        wd = self.__class__.workflow_dir
+        os.makedirs(wd, exist_ok=True)
+        filepath = os.path.join(wd, name)
         data = {"name": name, "steps": steps}
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -1702,10 +1731,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_json({"success": False, "error": "选区太小 (至少 3x3)"})
             return
         cropped = _current_screenshot[y1:y2, x1:x2].copy()
-        os.makedirs(TEMPLATE_DIR, exist_ok=True)
+        td = self.__class__.template_dir
+        os.makedirs(td, exist_ok=True)
         if not name.endswith(".png"):
             name += ".png"
-        filepath = os.path.join(TEMPLATE_DIR, name)
+        filepath = os.path.join(td, name)
         if os.path.exists(filepath):
             self._send_json({"success": False, "error": f"文件已存在: {name}"})
             return
@@ -1717,20 +1747,96 @@ class RequestHandler(BaseHTTPRequestHandler):
             "size": f"{x2-x1}x{y2-y1}",
         })
 
+    # ── 模板匹配测试（供 capture-template 页面调用） ──
+    def _handle_test_match(self, body):
+        global _current_screenshot
+        d = RequestHandler.device
+        template = body.get("template", "")
+        threshold = float(body.get("threshold", 0.8))
+
+        if not template:
+            self._send_json({"success": False, "error": "No template specified"})
+            return
+
+        td = self.__class__.template_dir
+        tpl_path = os.path.join(td, template)
+        if not os.path.isfile(tpl_path):
+            self._send_json({"success": False, "error": f"Template not found: {template}"})
+            return
+
+        template_cv = cv2.imread(tpl_path)
+        if template_cv is None:
+            self._send_json({"success": False, "error": f"Cannot read: {template}"})
+            return
+
+        # 截图不为空时对当前截图做匹配
+        if _current_screenshot is not None:
+            result = cv2.matchTemplate(_current_screenshot, template_cv, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
+            h, w = template_cv.shape[:2]
+            self._send_json({
+                "success": True,
+                "found": max_val >= threshold,
+                "x": int(max_loc[0]), "y": int(max_loc[1]),
+                "width": w, "height": h,
+                "confidence": round(float(max_val), 4),
+            })
+        else:
+            self._send_json({"success": False, "error": "No screenshot available"})
+
+    # ── 点击坐标（供 capture-template 页面调用） ──
+    def _handle_click(self, body):
+        d = RequestHandler.device
+        if d is None:
+            self._send_json({"success": False, "error": "Device not connected"})
+            return
+        x = int(body.get("x", 0))
+        y = int(body.get("y", 0))
+        try:
+            d.click(x, y)
+            self._send_json({"success": True, "x": x, "y": y})
+        except Exception as e:
+            self._send_json({"success": False, "error": str(e)})
+
 
 # ─────────────── 启动 ───────────────
 
-def start_server():
-    server = HTTPServer((HOST, PORT), RequestHandler)
-    logger.info(f"Workflow Builder: http://{HOST}:{PORT}")
-    webbrowser.open(f"http://{HOST}:{PORT}")
+def start_server(host=HOST, port=PORT):
+    server = HTTPServer((host, port), RequestHandler)
+    logger.info(f"Workflow Builder: http://{host}:{port}")
+    webbrowser.open(f"http://{host}:{port}")
     server.serve_forever()
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Web 版工作流编排工具")
+    parser.add_argument("--templates-dir", default="templates",
+                        help="模板图片目录 (默认: templates)")
+    parser.add_argument("--workflows-dir", default="workflows",
+                        help="工作流文件目录 (默认: workflows)")
+    parser.add_argument("--screenrecords-dir", default="screenrecords",
+                        help="录屏文件目录 (默认: screenrecords)")
+    parser.add_argument("--port", type=int, default=PORT,
+                        help=f"服务端口 (默认: {PORT})")
+    args = parser.parse_args()
+
+    # 转换为绝对路径，避免工作目录切换影响
+    RequestHandler.template_dir = os.path.abspath(args.templates_dir)
+    RequestHandler.workflow_dir = os.path.abspath(args.workflows_dir)
+    RequestHandler.screenrecords_dir = os.path.abspath(args.screenrecords_dir)
+    # 同步给 workflow_runner 模块，确保 execute_single_step 使用相同路径
+    from mg_autotest.scripts import workflow_runner as _wr
+    _wr.TEMPLATE_DIR = RequestHandler.template_dir
+
+    host = HOST
+    port = args.port
+
     print("=" * 50)
     print("  Workflow Builder")
     print("=" * 50)
+    print(f"\n  模板目录:     {RequestHandler.template_dir}")
+    print(f"  工作流目录:   {RequestHandler.workflow_dir}")
+    print(f"  录屏目录:     {RequestHandler.screenrecords_dir}")
 
     print("\n[Device] Connecting...")
     try:
@@ -1753,7 +1859,7 @@ def main():
         print(f"   [Warn] Device connection failed: {e}")
         print("   Workflow editing still available, click/run needs device.")
 
-    print("\n[Server] http://{}:{}".format(HOST, PORT))
+    print("\n[Server] http://{}:{}".format(host, port))
     print("\nInstructions:")
     print("   1. Drag templates from left panel to workflow area")
     print("   2. Configure each step's threshold, timeout, offsets")
@@ -1762,8 +1868,11 @@ def main():
     print("   5. Export as runnable Python script")
     print("\nPress Ctrl+C to exit\n")
 
+    server = HTTPServer((host, port), RequestHandler)
+    logger.info(f"Workflow Builder: http://{host}:{port}")
+    webbrowser.open(f"http://{host}:{port}")
     try:
-        start_server()
+        server.serve_forever()
     except KeyboardInterrupt:
         print("\n[Exit] Stopped")
 
