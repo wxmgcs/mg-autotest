@@ -4,3 +4,6 @@ set PATH=D:\aDisk\py3109-autotest\Scripts;D:\aDisk\py3109-autotest;%PATH%
 python -m pip install -e .
 python src/mg_autotest/scripts/workflow_builder.py
 ```
+
+
+python src/mg_autotest/scripts/workflow_runner.py --templates-dir E:\CTU_MobileStack\ProjectTest\templates --workflows-dir E:\CTU_MobileStack\ProjectTest\workflows --screenrecords-dir E:\CTU_MobileStack\ProjectTest\screenrecords --screenshots-dir E:\CTU_MobileStack\ProjectTest\screenshots

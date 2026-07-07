@@ -48,8 +48,8 @@ def list_workflows() -> list:
     return files
 
 
-def select_workflow_interactive() -> str:
-    """交互式让用户选择工作流文件"""
+def select_workflows_interactive() -> list:
+    """交互式让用户选择多个工作流文件"""
     files = list_workflows()
     if not files:
         print("   [Error] workflows/ 目录下没有 .json 文件")
@@ -59,13 +59,34 @@ def select_workflow_interactive() -> str:
     for i, f in enumerate(files, 1):
         print(f"  {i}. {f}")
 
+    print(f"\n输入编号选择（逗号/空格分隔，如: 1,3,5-7；留空=全部，q=退出）")
     while True:
         try:
-            choice = input(f"\n请选择 (1-{len(files)}): ").strip()
-            idx = int(choice) - 1
-            if 0 <= idx < len(files):
-                return files[idx]
-        except ValueError:
+            choice = input(f"\n请选择 (1-{len(files)}): ").strip().lower()
+            if not choice:
+                return files  # 空=全部
+            if choice == 'q':
+                sys.exit(0)
+            selected = set()
+            # 支持逗号、空格分隔，以及范围语法 5-7
+            parts = choice.replace(',', ' ').split()
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    continue
+                if '-' in part:
+                    a, b = part.split('-', 1)
+                    for i in range(int(a.strip()), int(b.strip()) + 1):
+                        idx = int(i)
+                        if 1 <= idx <= len(files):
+                            selected.add(idx)
+                else:
+                    idx = int(part)
+                    if 1 <= idx <= len(files):
+                        selected.add(idx)
+            if selected:
+                return [files[i - 1] for i in sorted(selected)]
+        except (ValueError, IndexError):
             pass
         print("  无效选择，请重试")
 
@@ -332,17 +353,18 @@ def parse_args():
         epilog="""
 使用示例:
     python scripts/workflow_runner.py my_flow.json
-    python scripts/workflow_runner.py                      # 交互选择
-    python scripts/workflow_runner.py --list               # 列出可用工作流
-    python scripts/workflow_runner.py my_flow.json --continue  # 遇错继续
+    python scripts/workflow_runner.py flow1.json flow2.json    # 顺序执行多个
+    python scripts/workflow_runner.py                          # 交互选择（支持多选）
+    python scripts/workflow_runner.py --list                   # 列出可用工作流
+    python scripts/workflow_runner.py flow1.json flow2.json --continue  # 遇错继续
         """,
     )
-    parser.add_argument("workflow", nargs="?", default=None,
-                        help="工作流 JSON 文件路径 (留空则交互选择)")
+    parser.add_argument("workflows", nargs="*", default=None,
+                        help="工作流 JSON 文件路径（多个用空格分隔，留空则交互选择）")
     parser.add_argument("--list", action="store_true",
                         help="列出 workflows/ 目录下所有工作流")
     parser.add_argument("--continue", dest="continue_on_error", action="store_true",
-                        help="遇错时继续执行，不停止")
+                        help="遇错时继续执行下一个步骤/工作流，不停止")
     parser.add_argument("--record", action="store_true",
                         help="录制屏幕操作，保存到 screenrecords/ 目录")
     parser.add_argument("--initenv", action="store_true",
@@ -353,6 +375,8 @@ def parse_args():
                         help="工作流文件目录 (默认: workflows)")
     parser.add_argument("--screenrecords-dir", default="screenrecords",
                         help="录屏文件目录 (默认: screenrecords)")
+    parser.add_argument("--screenshots-dir", default="screenshots",
+                        help="截图保存目录 (默认: screenshots)")
     return parser.parse_args()
 
 
@@ -365,9 +389,11 @@ def main():
     WORKFLOW_DIR = os.path.abspath(args.workflows_dir)
     TEMPLATE_DIR = os.path.abspath(args.templates_dir)
     SCREENRECORDS_DIR = os.path.abspath(args.screenrecords_dir)
+    screenshots_dir = os.path.abspath(args.screenshots_dir)
     # 同步到 step_executor 共享模块
     import mg_autotest.scripts.step_executor as _se
     _se.TEMPLATE_DIR = TEMPLATE_DIR
+    _se.SCREENSHOTS_DIR = screenshots_dir
 
     print("=" * 50)
     print("  Workflow Runner")
@@ -375,6 +401,7 @@ def main():
     print(f"\n  模板目录:     {TEMPLATE_DIR}")
     print(f"  工作流目录:   {WORKFLOW_DIR}")
     print(f"  录屏目录:     {SCREENRECORDS_DIR}")
+    print(f"  截图目录:     {screenshots_dir}")
 
     # --list 模式
     if args.list:
@@ -387,29 +414,53 @@ def main():
                 print(f"    • {f}")
         return
 
-    # 确定工作流文件
-    filepath = args.workflow
-    if not filepath:
-        filepath = select_workflow_interactive()
-    elif not os.path.isfile(filepath):
-        # 尝试 workflows/ 前缀
-        alt = os.path.join(WORKFLOW_DIR, filepath)
-        if os.path.isfile(alt):
-            filepath = alt
-        else:
-            print(f"\n  [Error] 文件不存在: {filepath}")
-            sys.exit(1)
+    # 确定工作流文件列表
+    workflow_files = args.workflows
+    if not workflow_files:
+        # 交互选择（支持多选）
+        workflow_files = select_workflows_interactive()
+    else:
+        # 处理命令行传入的多个文件
+        resolved = []
+        for f in workflow_files:
+            if os.path.isfile(f):
+                resolved.append(f)
+            else:
+                alt = os.path.join(WORKFLOW_DIR, f)
+                if os.path.isfile(alt):
+                    resolved.append(alt)
+                else:
+                    print(f"\n  [Error] 文件不存在: {f}")
+                    sys.exit(1)
+        workflow_files = resolved
 
-    # 运行
-    print(f"\n  工作流: {filepath}")
-    print(f"  遇错继续: {'是' if args.continue_on_error else '否（默认停止）'}")
-    print(f"  屏幕录制: {'是' if args.record else '否'}")
+    # 运行一个或多个工作流
+    print(f"\n  工作流数:   {len(workflow_files)}")
+    print(f"  遇错继续:   {'是' if args.continue_on_error else '否（默认停止）'}")
+    print(f"  屏幕录制:   {'是' if args.record else '否'}")
     print(f"  环境初始化: {'是' if args.initenv else '否'}")
     print()
 
-    success = run_workflow(filepath, continue_on_error=args.continue_on_error,
-                            record=args.record, initenv=args.initenv)
-    sys.exit(0 if success else 1)
+    success_count = 0
+    fail_count = 0
+    for i, filepath in enumerate(workflow_files, 1):
+        print(f"\n{'=' * 50}")
+        print(f"  工作流 [{i}/{len(workflow_files)}]: {filepath}")
+        print(f"{'=' * 50}")
+        ok = run_workflow(filepath, continue_on_error=args.continue_on_error,
+                          record=args.record, initenv=args.initenv)
+        if ok:
+            success_count += 1
+        else:
+            fail_count += 1
+            if not args.continue_on_error:
+                logger.warning(f"工作流 [{i}/{len(workflow_files)}] 失败，终止执行")
+                break
+
+    print(f"\n{'=' * 50}")
+    if len(workflow_files) > 1:
+        print(f"  全部完成: {success_count} 成功, {fail_count} 失败 / 共 {len(workflow_files)} 个")
+    sys.exit(0 if fail_count == 0 else 1)
 
 
 if __name__ == "__main__":
