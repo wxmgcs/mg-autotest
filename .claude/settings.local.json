@@ -8,7 +8,13 @@
       "Bash(cp -r scripts/* src/mg_autotest/scripts/)",
       "Bash(rm -rf core scripts main.py config.py)",
       "Bash(ls -la *.py)",
-      "Bash(PYTHONPATH=src D:/aDisk/py3109-autotest/python.exe *)"
+      "Bash(PYTHONPATH=src D:/aDisk/py3109-autotest/python.exe *)",
+      "Bash(D:/aDisk/py3109-autotest/python.exe -m pip list)",
+      "Bash(D:/aDisk/py3109-autotest/python.exe -m build)",
+      "Bash(D:/aDisk/py3109-autotest/python.exe -m build --no-isolation)",
+      "Read(//c/Users/wangx/AppData/Local/Programs/**)",
+      "Read(//c/Users/wangx/AppData/Local/Microsoft/WindowsApps/**)",
+      "Bash(D:/aDisk/py3109-autotest/python.exe -c ' *)"
     ]
   }
 }

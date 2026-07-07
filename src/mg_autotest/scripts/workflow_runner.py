@@ -28,9 +28,10 @@ except ImportError:
 import cv2
 from mg_autotest.core.logger import get_logger, setup_logger
 from mg_autotest.core.device import get_device, wake_screen, press_home
-from mg_autotest.core.image_matcher import find_image, find_and_click, save_screenshot
+from mg_autotest.core.image_matcher import save_screenshot
 from mg_autotest.core.watchers import setup_watchers
 from mg_autotest.config import STATUS_BAR_HEIGHT, RECORD_INTERVAL, RECORD_RESIZE_RATIO, RECORD_GIF_COLORS
+from mg_autotest.scripts.step_executor import execute_single_step
 
 logger = get_logger(__name__)
 
@@ -96,82 +97,11 @@ def load_workflow(filepath: str) -> dict:
         return None
 
 
-def execute_single_step(d, step: dict) -> dict:
-    """
-    执行单个步骤，返回 {success, result/error} 字典。
-
-    供 workflow_builder 等外部模块调用，不产生日志前缀/编号。
-    """
-    step_type = step.get("type", "click")
-    try:
-        if step_type == "click":
-            from mg_autotest.core.image_matcher import find_and_click
-            template = step.get("template", "")
-            threshold = float(step.get("threshold", 0.8))
-            timeout = float(step.get("timeout", 10))
-            ox = int(step.get("offsetX", 0))
-            oy = int(step.get("offsetY", 0))
-            tpl_path = os.path.join(TEMPLATE_DIR, template)
-            if not os.path.isfile(tpl_path):
-                return {"success": False, "error": f"Template not found: {template}"}
-            ok = find_and_click(d, tpl_path, threshold=threshold, timeout=timeout, offset_x=ox, offset_y=oy)
-            return {"success": ok, "result": "clicked" if ok else "not found"}
-
-        elif step_type == "text":
-            text = step.get("text", "")
-            d.send_keys(text)
-            return {"success": True, "result": f"sent text: {text}"}
-
-        elif step_type == "long_click":
-            from mg_autotest.core.image_matcher import find_image
-            template = step.get("template", "")
-            threshold = float(step.get("threshold", 0.8))
-            timeout = float(step.get("timeout", 10))
-            ox = int(step.get("offsetX", 0))
-            oy = int(step.get("offsetY", 0))
-            duration = float(step.get("duration", 1.0))
-            tpl_path = os.path.join(TEMPLATE_DIR, template)
-            if not os.path.isfile(tpl_path):
-                return {"success": False, "error": f"Template not found: {template}"}
-            result = find_image(d, tpl_path, threshold=threshold, timeout=timeout)
-            if result is None:
-                return {"success": False, "error": "template not found"}
-            cx, cy, _ = result
-            d.long_click(cx + ox, cy + oy, duration=duration)
-            return {"success": True, "result": f"long clicked ({cx+ox},{cy+oy})"}
-
-        elif step_type == "swipe":
-            sx = int(step.get("sx", 0))
-            sy = int(step.get("sy", 0))
-            ex = int(step.get("ex", 0))
-            ey = int(step.get("ey", 0))
-            duration = float(step.get("duration", 0.1))
-            d.swipe(sx, sy, ex, ey, duration=duration)
-            return {"success": True, "result": f"swiped ({sx},{sy}) -> ({ex},{ey})"}
-
-        elif step_type == "wait":
-            seconds = float(step.get("seconds", 2))
-            time.sleep(seconds)
-            return {"success": True, "result": f"waited {seconds}s"}
-
-        elif step_type == "back":
-            d.press("back")
-            return {"success": True, "result": "pressed back"}
-
-        elif step_type == "screenrecord":
-            return {"success": True, "result": "screenrecord marker (recording controlled by --record flag)"}
-
-        else:
-            return {"success": False, "error": f"unknown type: {step_type}"}
-
-    except Exception as e:
-        logger.error(f"单步执行异常: {e}")
-        return {"success": False, "error": str(e)}
-
-
 def execute_step(d, step: dict, step_num: int, total: int) -> bool:
     """
-    执行单个步骤。
+    执行单个步骤（含日志输出）。
+
+    实际执行逻辑委托给 step_executor.execute_single_step。
 
     Args:
         d: uiautomator2 Device
@@ -182,102 +112,22 @@ def execute_step(d, step: dict, step_num: int, total: int) -> bool:
     Returns:
         True 成功，False 失败
     """
-    step_type = step.get("type", "click")
     desc = step.get("desc", f"Step {step_num}")
-    enabled = step.get("enabled", True)
-
-    if not enabled:
+    if not step.get("enabled", True):
         logger.info(f"  [{step_num}/{total}] ⏭ {desc} (已禁用，跳过)")
         return True
 
     prefix = f"  [{step_num}/{total}]"
     logger.info(f"{prefix} ▶ {desc}")
 
-    try:
-        if step_type == "click":
-            template = step.get("template", "")
-            threshold = float(step.get("threshold", 0.8))
-            timeout = float(step.get("timeout", 10))
-            offset_x = int(step.get("offsetX", 0))
-            offset_y = int(step.get("offsetY", 0))
-            tpl_path = os.path.join(TEMPLATE_DIR, template)
-
-            if not os.path.isfile(tpl_path):
-                logger.error(f"  {prefix} ✗ 模板文件不存在: {tpl_path}")
-                return False
-
-            result = find_and_click(d, tpl_path, threshold=threshold,
-                                    timeout=timeout, offset_x=offset_x, offset_y=offset_y)
-            if result:
-                logger.info(f"  {prefix} ✓ 点击成功")
-                return True
-            else:
-                logger.warning(f"  {prefix} ✗ 未找到模板: {template}")
-                return False
-
-        elif step_type == "text":
-            text = step.get("text", "")
-            if text:
-                d.send_keys(text)
-                logger.info(f"  {prefix} ✓ 已输入文本: {text}")
-            else:
-                logger.warning(f"  {prefix} ⚠ 文本为空，跳过")
-            return True
-
-        elif step_type == "long_click":
-            template = step.get("template", "")
-            threshold = float(step.get("threshold", 0.8))
-            timeout = float(step.get("timeout", 10))
-            offset_x = int(step.get("offsetX", 0))
-            offset_y = int(step.get("offsetY", 0))
-            duration = float(step.get("duration", 1.0))
-            tpl_path = os.path.join(TEMPLATE_DIR, template)
-
-            if not os.path.isfile(tpl_path):
-                logger.error(f"  {prefix} ✗ 模板文件不存在: {tpl_path}")
-                return False
-
-            # 先找模板位置
-            result = find_image(d, tpl_path, threshold=threshold, timeout=timeout)
-            if result is None:
-                logger.warning(f"  {prefix} ✗ 未找到模板: {template}")
-                return False
-
-            cx, cy, confidence = result
-            click_x = cx + offset_x
-            click_y = cy + offset_y
-            d.long_click(click_x, click_y, duration=duration)
-            logger.info(f"  {prefix} ✓ 长按完成: ({click_x}, {click_y}) duration={duration}s")
-            return True
-
-        elif step_type == "wait":
-            seconds = float(step.get("seconds", 2))
-            logger.info(f"  {prefix} ⏳ 等待 {seconds}s...")
-            time.sleep(seconds)
-            logger.info(f"  {prefix} ✓ 等待结束")
-            return True
-
-        elif step_type == "back":
-            d.press("back")
-            logger.info(f"  {prefix} ✓ 返回")
-            return True
-
-        elif step_type == "swipe":
-            sx = int(step.get("sx", 0))
-            sy = int(step.get("sy", 0))
-            ex = int(step.get("ex", 0))
-            ey = int(step.get("ey", 0))
-            duration = float(step.get("duration", 0.1))
-            d.swipe(sx, sy, ex, ey, duration=duration)
-            logger.info(f"  {prefix} ✓ 滑动完成: ({sx},{sy}) → ({ex},{ey}) duration={duration}s")
-            return True
-
-        else:
-            logger.warning(f"  {prefix} ⚠ 未知步骤类型: {step_type}")
-            return True
-
-    except Exception as e:
-        logger.error(f"  {prefix} ✗ 执行异常: {e}")
+    result = execute_single_step(d, step)
+    if result.get("success"):
+        detail = result.get("result", "")
+        logger.info(f"{prefix} ✓ {detail}")
+        return True
+    else:
+        err = result.get("error", "unknown")
+        logger.warning(f"{prefix} ✗ {err}")
         return False
 
 
@@ -515,6 +365,9 @@ def main():
     WORKFLOW_DIR = os.path.abspath(args.workflows_dir)
     TEMPLATE_DIR = os.path.abspath(args.templates_dir)
     SCREENRECORDS_DIR = os.path.abspath(args.screenrecords_dir)
+    # 同步到 step_executor 共享模块
+    import mg_autotest.scripts.step_executor as _se
+    _se.TEMPLATE_DIR = TEMPLATE_DIR
 
     print("=" * 50)
     print("  Workflow Runner")

@@ -28,7 +28,7 @@ import cv2
 import numpy as np
 from mg_autotest.core.device import get_device
 from mg_autotest.core.logger import get_logger
-from mg_autotest.scripts.workflow_runner import execute_single_step
+from mg_autotest.scripts.step_executor import execute_single_step
 
 logger = get_logger(__name__)
 
@@ -316,6 +316,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
         <button class="btn-add-step" onclick="addWaitStep()" title="Add wait step">+ Wait</button>
         <button class="btn-add-step" onclick="addSwipeStep('down')" title="Add swipe down step">+ 下滑</button>
         <button class="btn-add-step" onclick="addSwipeStep('up')" title="Add swipe up step">+ 上滑</button>
+        <button class="btn-add-step" onclick="addScreenshotStep()" title="Add screenshot step">+ Screenshot</button>
         <button class="btn-add-step" onclick="addScreenrecordStep()" title="Add screenrecord step">+ Screenrecord</button>
       </span>
     </div>
@@ -489,6 +490,11 @@ function addBackStep() {
   renderSteps();
   toast('Added back step');
 }
+function addScreenshotStep() {
+  steps.push({ type: 'screenshot', enabled: true, desc: 'screenshot' });
+  renderSteps();
+  toast('Added screenshot step');
+}
 function addScreenrecordStep() {
   steps.push({ type: 'screenrecord', enabled: true, desc: 'screenrecord' });
   renderSteps();
@@ -544,6 +550,8 @@ function renderSteps() {
       headerHtml += '<span style="font-size:18px;width:36px;text-align:center;flex-shrink:0">&#x21C5;</span>';
     } else if (step.type === 'screenrecord') {
       headerHtml += '<span style="font-size:18px;width:36px;text-align:center;flex-shrink:0">&#x25CF;</span>';
+    } else if (step.type === 'screenshot') {
+      headerHtml += '<span style="font-size:18px;width:36px;text-align:center;flex-shrink:0">&#x1F4F7;</span>';
     }
 
     headerHtml +=
@@ -558,7 +566,7 @@ function renderSteps() {
       '</div>';
 
     // -- type selector --
-    var typeOpts = ['click', 'text', 'long_click', 'swipe', 'wait', 'back', 'screenrecord'];
+    var typeOpts = ['click', 'text', 'long_click', 'swipe', 'wait', 'back', 'screenrecord', 'screenshot'];
     var typeSel = '<select class="type-select" onchange="changeStepType(' + idx + ', this.value)">';
     typeOpts.forEach(function(t) {
       typeSel += '<option value="' + t + '"' + (step.type === t ? ' selected' : '') + '>' + t + '</option>';
@@ -624,6 +632,8 @@ function renderSteps() {
       bodyHtml += '<div class="step-body"><span class="type-badge back">back</span></div>';
     } else if (step.type === 'screenrecord') {
       bodyHtml += '<div class="step-body"><span class="type-badge screenrecord" style="background:#e94560">screenrecord</span></div>';
+    } else if (step.type === 'screenshot') {
+      bodyHtml += '<div class="step-body"><span class="type-badge screenshot" style="background:#5a8">screenshot</span></div>';
     }
 
     // -- insert bar before each step --
@@ -862,6 +872,8 @@ function changeStepType(idx, newType) {
     steps[idx] = { type:'back', enabled:enabled, desc:desc || 'back' };
   } else if (newType === 'screenrecord') {
     steps[idx] = { type:'screenrecord', enabled:enabled, desc:desc || 'screenrecord' };
+  } else if (newType === 'screenshot') {
+    steps[idx] = { type:'screenshot', enabled:enabled, desc:desc || 'screenshot' };
   }
   renderSteps();
   toast('Changed to ' + newType);
@@ -1431,6 +1443,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         if d is None:
             self._send_json({"success": False, "error": "Device not connected"})
             return
+
         try:
             result = execute_single_step(d, step)
             self._send_json(result)
@@ -1649,6 +1662,19 @@ class RequestHandler(BaseHTTPRequestHandler):
             elif step_type == "screenrecord":
                 lines.append(f'    # screenrecord marker: pass --record to enable recording')
 
+            elif step_type == "screenshot":
+                lines.append(f'    # screenshot step')
+                lines.append(f'    import datetime')
+                lines.append(f'    import os')
+                lines.append(f'    import cv2')
+                lines.append(f'    ss = d.screenshot(format="opencv")')
+                lines.append(f'    if ss is not None:')
+                lines.append(f'        os.makedirs("screenshots", exist_ok=True)')
+                lines.append(f'        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")')
+                lines.append(f'        path = f"screenshots/screenshot_{{ts}}.png"')
+                lines.append(f'        cv2.imwrite(path, ss)')
+                lines.append(f'        logger.info(f"Screenshot saved: {{path}}")')
+
             else:
                 lines.append(f'    # unknown step type: {step_type}')
 
@@ -1816,6 +1842,8 @@ def main():
                         help="工作流文件目录 (默认: workflows)")
     parser.add_argument("--screenrecords-dir", default="screenrecords",
                         help="录屏文件目录 (默认: screenrecords)")
+    parser.add_argument("--screenshots-dir", default="screenshots",
+                        help="截图保存目录 (默认: screenshots)")
     parser.add_argument("--port", type=int, default=PORT,
                         help=f"服务端口 (默认: {PORT})")
     args = parser.parse_args()
@@ -1824,9 +1852,10 @@ def main():
     RequestHandler.template_dir = os.path.abspath(args.templates_dir)
     RequestHandler.workflow_dir = os.path.abspath(args.workflows_dir)
     RequestHandler.screenrecords_dir = os.path.abspath(args.screenrecords_dir)
-    # 同步给 workflow_runner 模块，确保 execute_single_step 使用相同路径
-    from mg_autotest.scripts import workflow_runner as _wr
-    _wr.TEMPLATE_DIR = RequestHandler.template_dir
+    # 同步目录配置给 step_executor 共享模块
+    from mg_autotest.scripts import step_executor as _se
+    _se.TEMPLATE_DIR = RequestHandler.template_dir
+    _se.SCREENSHOTS_DIR = os.path.abspath(args.screenshots_dir)
 
     host = HOST
     port = args.port
@@ -1837,6 +1866,7 @@ def main():
     print(f"\n  模板目录:     {RequestHandler.template_dir}")
     print(f"  工作流目录:   {RequestHandler.workflow_dir}")
     print(f"  录屏目录:     {RequestHandler.screenrecords_dir}")
+    print(f"  截图目录:     {_se.SCREENSHOTS_DIR}")
 
     print("\n[Device] Connecting...")
     try:

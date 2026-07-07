@@ -1,8 +1,6 @@
-1、设置Python环境
+
+```shell
 set PATH=D:\aDisk\py3109-autotest\Scripts;D:\aDisk\py3109-autotest;%PATH%
-
-2、开发模式安装包
 python -m pip install -e .
-
-3、直接运行：
 python src/mg_autotest/scripts/workflow_builder.py
+```
