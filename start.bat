@@ -1,0 +1,1 @@
+cd /d d:\aDisk\github\mg-autotest && set PATH=D:\aDisk\py3109-autotest\Scripts;D:\aDisk\py3109-autotest;%PATH% && mg-workflow-builder --templates-dir D:\aDisk\ctu-test\api_test\app_autotest\templates --workflows-dir D:\aDisk\ctu-test\api_test\app_autotest\workflows --screenrecords-dir D:\aDisk\ctu-test\api_test\app_autotest\screenrecords
