@@ -19,6 +19,7 @@ logger = get_logger(__name__)
 # ── 目录配置（由各模块启动时设置） ──
 TEMPLATE_DIR = "templates"
 SCREENSHOTS_DIR = "screenshots"
+SCREENSHOTS_FAIL_DIR = "screenshots_fail"
 
 
 def execute_single_step(d, step: dict) -> dict:

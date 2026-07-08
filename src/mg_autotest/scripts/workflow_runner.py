@@ -28,7 +28,6 @@ except ImportError:
 import cv2
 from mg_autotest.core.logger import get_logger, setup_logger
 from mg_autotest.core.device import get_device, wake_screen, press_home
-from mg_autotest.core.image_matcher import save_screenshot
 from mg_autotest.core.watchers import setup_watchers
 from mg_autotest.config import STATUS_BAR_HEIGHT, RECORD_INTERVAL, RECORD_RESIZE_RATIO, RECORD_GIF_COLORS
 from mg_autotest.scripts.step_executor import execute_single_step
@@ -38,6 +37,7 @@ logger = get_logger(__name__)
 WORKFLOW_DIR = "workflows"
 TEMPLATE_DIR = "templates"
 SCREENRECORDS_DIR = "screenrecords"
+SCREENSHOTS_FAIL_DIR = "screenshots_fail"
 CONTINUE_ON_ERROR = False  # 默认遇错停止，--continue 则跳过继续
 
 
@@ -294,8 +294,17 @@ def run_workflow(filepath: str, continue_on_error: bool = False, record: bool = 
                 success_count += 1
             else:
                 fail_count += 1
-                # 截图保存现场
-                save_screenshot(d, f"step{step_num}_fail")
+                # 失败截图保存到 screenshots_fail
+                try:
+                    fail_img = d.screenshot(format="opencv")
+                    if fail_img is not None:
+                        os.makedirs(SCREENSHOTS_FAIL_DIR, exist_ok=True)
+                        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        fail_path = os.path.join(SCREENSHOTS_FAIL_DIR, f"step{step_num}_fail_{ts}.png")
+                        cv2.imwrite(fail_path, fail_img)
+                        logger.info(f"  失败截图已保存: {fail_path}")
+                except Exception as e:
+                    logger.warning(f"  保存失败截图异常: {e}")
                 if not continue_on_error:
                     logger.error(f"步骤 {step_num} 失败，终止执行")
                     break
@@ -377,6 +386,8 @@ def parse_args():
                         help="录屏文件目录 (默认: screenrecords)")
     parser.add_argument("--screenshots-dir", default="screenshots",
                         help="截图保存目录 (默认: screenshots)")
+    parser.add_argument("--screenshots-fail-dir", default="screenshots_fail",
+                        help="失败截图保存目录 (默认: screenshots_fail)")
     return parser.parse_args()
 
 
@@ -385,15 +396,17 @@ def main():
     args = parse_args()
 
     # 应用自定义目录（转绝对路径）
-    global WORKFLOW_DIR, TEMPLATE_DIR, SCREENRECORDS_DIR
+    global WORKFLOW_DIR, TEMPLATE_DIR, SCREENRECORDS_DIR, SCREENSHOTS_FAIL_DIR
     WORKFLOW_DIR = os.path.abspath(args.workflows_dir)
     TEMPLATE_DIR = os.path.abspath(args.templates_dir)
     SCREENRECORDS_DIR = os.path.abspath(args.screenrecords_dir)
     screenshots_dir = os.path.abspath(args.screenshots_dir)
+    SCREENSHOTS_FAIL_DIR = os.path.abspath(args.screenshots_fail_dir)
     # 同步到 step_executor 共享模块
     import mg_autotest.scripts.step_executor as _se
     _se.TEMPLATE_DIR = TEMPLATE_DIR
     _se.SCREENSHOTS_DIR = screenshots_dir
+    _se.SCREENSHOTS_FAIL_DIR = SCREENSHOTS_FAIL_DIR
 
     print("=" * 50)
     print("  Workflow Runner")
@@ -402,6 +415,7 @@ def main():
     print(f"  工作流目录:   {WORKFLOW_DIR}")
     print(f"  录屏目录:     {SCREENRECORDS_DIR}")
     print(f"  截图目录:     {screenshots_dir}")
+    print(f"  失败截图目录: {SCREENSHOTS_FAIL_DIR}")
 
     # --list 模式
     if args.list:

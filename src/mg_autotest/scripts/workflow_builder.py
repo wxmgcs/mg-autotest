@@ -1466,6 +1466,19 @@ class RequestHandler(BaseHTTPRequestHandler):
                 ok_count += 1
             else:
                 fail_count += 1
+                # 失败截图保存到 screenshots_fail
+                try:
+                    fail_img = d.screenshot(format="opencv")
+                    if fail_img is not None:
+                        import datetime as _dt
+                        from mg_autotest.scripts import step_executor as _se
+                        os.makedirs(_se.SCREENSHOTS_FAIL_DIR, exist_ok=True)
+                        ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        fp = os.path.join(_se.SCREENSHOTS_FAIL_DIR, f"step{i+1}_fail_{ts}.png")
+                        cv2.imwrite(fp, fail_img)
+                        logger.info(f"失败截图已保存: {fp}")
+                except Exception as _e:
+                    logger.warning(f"保存失败截图异常: {_e}")
                 self._send_json({
                     "success": False,
                     "error": result.get("error", "unknown"),
@@ -1525,6 +1538,17 @@ class RequestHandler(BaseHTTPRequestHandler):
             _time.sleep(INITENV_INTERVAL)
 
         if not found:
+            # 失败截图
+            try:
+                fail_img = d.screenshot(format="opencv")
+                if fail_img is not None:
+                    import datetime as _dt
+                    from mg_autotest.scripts import step_executor as _se
+                    os.makedirs(_se.SCREENSHOTS_FAIL_DIR, exist_ok=True)
+                    ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    cv2.imwrite(os.path.join(_se.SCREENSHOTS_FAIL_DIR, f"initenv_fail_{ts}.png"), fail_img)
+            except Exception:
+                pass
             self._send_json({
                 "success": False,
                 "error": f"环境恢复失败: {INITENV_MAX_ATTEMPTS} 次尝试后仍未检测到 '{INITENV_TEMPLATE}'",
@@ -1544,6 +1568,19 @@ class RequestHandler(BaseHTTPRequestHandler):
                 ok_count += 1
             else:
                 fail_count += 1
+                # 失败截图保存到 screenshots_fail
+                try:
+                    fail_img = d.screenshot(format="opencv")
+                    if fail_img is not None:
+                        import datetime as _dt
+                        from mg_autotest.scripts import step_executor as _se
+                        os.makedirs(_se.SCREENSHOTS_FAIL_DIR, exist_ok=True)
+                        ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        fp = os.path.join(_se.SCREENSHOTS_FAIL_DIR, f"step{i+1}_fail_{ts}.png")
+                        cv2.imwrite(fp, fail_img)
+                        logger.info(f"失败截图已保存: {fp}")
+                except Exception as _e:
+                    logger.warning(f"保存失败截图异常: {_e}")
                 self._send_json({
                     "success": False,
                     "error": result.get("error", "unknown"),
@@ -1844,6 +1881,8 @@ def main():
                         help="录屏文件目录 (默认: screenrecords)")
     parser.add_argument("--screenshots-dir", default="screenshots",
                         help="截图保存目录 (默认: screenshots)")
+    parser.add_argument("--screenshots-fail-dir", default="screenshots_fail",
+                        help="失败截图保存目录 (默认: screenshots_fail)")
     parser.add_argument("--port", type=int, default=PORT,
                         help=f"服务端口 (默认: {PORT})")
     args = parser.parse_args()
@@ -1856,6 +1895,7 @@ def main():
     from mg_autotest.scripts import step_executor as _se
     _se.TEMPLATE_DIR = RequestHandler.template_dir
     _se.SCREENSHOTS_DIR = os.path.abspath(args.screenshots_dir)
+    _se.SCREENSHOTS_FAIL_DIR = os.path.abspath(args.screenshots_fail_dir)
 
     host = HOST
     port = args.port
@@ -1867,6 +1907,7 @@ def main():
     print(f"  工作流目录:   {RequestHandler.workflow_dir}")
     print(f"  录屏目录:     {RequestHandler.screenrecords_dir}")
     print(f"  截图目录:     {_se.SCREENSHOTS_DIR}")
+    print(f"  失败截图目录: {_se.SCREENSHOTS_FAIL_DIR}")
 
     print("\n[Device] Connecting...")
     try:
